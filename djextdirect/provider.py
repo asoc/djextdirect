@@ -264,10 +264,10 @@ class Provider( object ):
                     }
                 if settings.DEBUG:
                     traceback.print_exc( file=stderr )
-                    errinfo['message'] = err.message
+                    errinfo['message'] = str(err)
                     errinfo['where']   = traceback.format_exc()
                 else:
-                    errinfo['message'] = 'The socket packet pocket has an error to report.'
+                    errinfo['message'] = str(err)
                     errinfo['where']   = ''
                 responses.append(errinfo)
 
@@ -320,10 +320,10 @@ class Provider( object ):
                     }
                 if settings.DEBUG:
                     traceback.print_exc( file=stderr )
-                    errinfo['message'] = err.message
+                    errinfo['message'] = str(err)
                     errinfo['where']   = traceback.format_exc()
                 else:
-                    errinfo['message'] = 'The socket packet pocket has an error to report.'
+                    errinfo['message'] = str(err)
                     errinfo['where']   = ''
                 response = errinfo
 
