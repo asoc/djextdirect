@@ -176,7 +176,7 @@ class Provider( object ):
                 'upload':  request.POST['extUpload'],
                 'tid':     request.POST['extTID'],
             }
-        except (MultiValueDictKeyError, KeyError), err:
+        except (MultiValueDictKeyError, KeyError) as err:
             try:
                 rawjson = json.loads( request.body )
             except getattr( json, "JSONDecodeError", ValueError ):
@@ -257,7 +257,7 @@ class Provider( object ):
                 else:
                     result = func( request )
 
-            except Exception, err:
+            except Exception as err:
                 errinfo = {
                     'type': 'exception',
                     "tid":  tid,
@@ -313,7 +313,7 @@ class Provider( object ):
             try:
                 result = func( request )
 
-            except Exception, err:
+            except Exception as err:
                 errinfo = {
                     'type': 'exception',
                     "tid":  tid,
