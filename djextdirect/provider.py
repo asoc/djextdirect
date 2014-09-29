@@ -18,6 +18,7 @@
 import json
 import inspect
 import functools
+import six
 import traceback
 from sys import stderr
 
@@ -31,7 +32,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 
 def getname( cls_or_name ):
     """ If cls_or_name is not a string, return its __name__. """
-    if type(cls_or_name) not in ( str, unicode ):
+    if not isinstance(cls_or_name, six.string_types):
         return cls_or_name.__name__
     return cls_or_name
 
