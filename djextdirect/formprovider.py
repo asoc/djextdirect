@@ -14,18 +14,15 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
 """
-
 import json
-
 import functools
 
-from django      import forms
+from django import forms
 from django.http import HttpResponse, Http404
 from django.conf.urls import url
 from django.utils.safestring import mark_safe
 from django.core.serializers.json import DjangoJSONEncoder
-
-from provider import Provider
+from .provider import Provider
 
 # Template used for the auto-generated form classes
 EXT_CLASS_TEMPLATE = """
@@ -173,45 +170,45 @@ class FormProvider(Provider):
         instead. EXT_validate should update form.errors before returning False.
     """
 
-    def __init__( self, name="Ext.app.REMOTING_API", autoadd=True ):
-        Provider.__init__( self, name="Ext.app.REMOTING_API", autoadd=True )
-        self.forms    = {}
+    def __init__(self, name="Ext.app.REMOTING_API", autoadd=True):
+        Provider.__init__(self, name="Ext.app.REMOTING_API", autoadd=True)
+        self.forms = {}
 
-    def get_choices_combo_src( self, request ):
-        return HttpResponse( EXT_DYNAMICCHOICES_COMBO, content_type="text/javascript" )
+    def get_choices_combo_src(self, request):
+        return HttpResponse(EXT_DYNAMICCHOICES_COMBO, content_type="text/javascript")
 
-    def register_form( self, formclass ):
+    def register_form(self, formclass):
         """ Register a Django Form class. """
-        if not issubclass( formclass, forms.ModelForm ):
-            raise TypeError( "Ext.Direct provider can only handle ModelForms, '%s' is something else." % formclass.__name__ )
+        if not issubclass(formclass, forms.ModelForm):
+            raise TypeError("Ext.Direct provider can only handle ModelForms, '%s' is something else." % formclass.__name__)
 
         formname = formclass.__name__.lower()
         self.forms[formname] = formclass
 
-        getfunc = functools.partial( self.get_form_data, formname )
+        getfunc = functools.partial(self.get_form_data, formname)
         getfunc.EXT_len = 1
         getfunc.EXT_argnames = ["pk"]
         getfunc.EXT_flags = {}
 
-        updatefunc = functools.partial( self.update_form_data, formname )
+        updatefunc = functools.partial(self.update_form_data, formname)
         updatefunc.EXT_len = 1
         updatefunc.EXT_argnames = ["pk"]
-        updatefunc.EXT_flags = { 'formHandler': True }
+        updatefunc.EXT_flags = {'formHandler': True}
 
-        choicesfunc = functools.partial( self.get_field_choices, formname )
+        choicesfunc = functools.partial(self.get_field_choices, formname)
         choicesfunc.EXT_len = 2
         choicesfunc.EXT_argnames = ["pk", "field"]
         choicesfunc.EXT_flags = {}
 
         self.classes["XD_%s" % formclass.__name__] = {
-            "get":     getfunc,
-            "update":  updatefunc,
+            "get": getfunc,
+            "update": updatefunc,
             "choices": choicesfunc,
-            }
+        }
 
         return formclass
 
-    def get_form( self, request, formname ):
+    def get_form(self, request, formname):
         """ Convert the form given in "formname" to an ExtJS FormPanel. """
 
         if formname not in self.forms:
@@ -224,155 +221,157 @@ class FormProvider(Provider):
         for fldname in self.forms[formname].base_fields:
             field = self.forms[formname].base_fields[fldname]
             extfld = {
-                "fieldLabel": field.label is not None and unicode(field.label) or fldname,
-                "name":       fldname,
-                "xtype":     "textfield",
-                #"allowEmpty": field.required,
-                }
+                "fieldLabel": field.label or fldname,
+                "name": fldname,
+                "xtype": "textfield",
+                # "allowEmpty": field.required,
+            }
 
-            if hasattr( field, "choices" ):
+            if hasattr(field, "choices"):
                 if field.choices:
                     # Static choices dict
                     extfld.update({
-                        "name":       fldname,
+                        "name": fldname,
                         "hiddenName": fldname,
-                        "xtype":      "combo",
-                        "store":      field.choices,
-                        "typeAhead":  True,
-                        "emptyText":  'Select...',
+                        "xtype": "combo",
+                        "store": field.choices,
+                        "typeAhead": True,
+                        "emptyText": 'Select...',
                         "triggerAction": 'all',
                         "selectOnFocus": True,
-                        })
+                    })
                 else:
                     # choices set but empty - load them dynamically when pk is known
                     extfld.update({
-                        "name":       fldname,
-                        "xtype":      "choicescombo",
+                        "name": fldname,
+                        "xtype": "choicescombo",
                         "displayField": "v",
-                        "valueField":   "k",
-                        })
+                        "valueField": "k",
+                    })
                     pass
-            elif isinstance( field, forms.BooleanField ):
+            elif isinstance(field, forms.BooleanField):
                 extfld.update({
                     "xtype": "checkbox"
-                    })
-            elif isinstance( field, forms.IntegerField ):
+                })
+            elif isinstance(field, forms.IntegerField):
                 extfld.update({
                     "xtype": "numberfield",
-                    })
-            elif isinstance( field, forms.FileField ) or isinstance( field, forms.ImageField ):
+                })
+            elif isinstance(field, forms.FileField) or isinstance(field, forms.ImageField):
                 hasfiles = True
                 extfld.update({
-                    "xtype":     "textfield",
+                    "xtype": "textfield",
                     "inputType": "file"
-                    })
-            elif isinstance( field.widget, forms.Textarea ):
+                })
+            elif isinstance(field.widget, forms.Textarea):
                 extfld.update({
                     "xtype": "textarea",
-                    "grow":  True
-                    })
-            elif isinstance( field.widget, forms.PasswordInput ):
+                    "grow": True
+                })
+            elif isinstance(field.widget, forms.PasswordInput):
                 extfld.update({
-                    "xtype":     "textfield",
+                    "xtype": "textfield",
                     "inputType": "password"
-                    })
+                })
 
-            items.append( extfld )
+            items.append(extfld)
 
             if field.help_text:
                 items.append({
                     "xtype": "label",
-                    "text":  unicode(field.help_text),
-                    "cls":   "form_hint_label",
-                    })
+                    "text": str(field.help_text),
+                    "cls": "form_hint_label",
+                })
 
         clscode = EXT_CLASS_TEMPLATE % {
-            'clsname':      clsname,
+            'clsname': clsname,
             'clslowername': formname,
-            'defaultconf':  '{'
-                'items:'    + json.dumps(items, cls=DjangoJSONEncoder, indent=4) + ','
-                'fileUpload: ' + json.dumps(hasfiles, cls=DjangoJSONEncoder) + ','
-                '}',
+            'defaultconf': '{'
+                           'items:' + json.dumps(items, cls=DjangoJSONEncoder, indent=4) + ','
+                                                                                           'fileUpload: ' + json.dumps(
+                hasfiles, cls=DjangoJSONEncoder) + ','
+                                                   '}',
             'apiconf': ('{'
-                'load:  '  + ("XD_%s.get"     % clsname) + ","
-                'submit:'  + ("XD_%s.update"  % clsname) + ","
-                'choices:' + ("XD_%s.choices" % clsname) + ","
-                "}"),
-            }
+                        'load:  ' + ("XD_%s.get" % clsname) + ","
+                                                              'submit:' + ("XD_%s.update" % clsname) + ","
+                                                                                                       'choices:' + (
+                        "XD_%s.choices" % clsname) + ","
+                                                     "}"),
+        }
 
-        return HttpResponse( mark_safe( clscode ), content_type="text/javascript" )
+        return HttpResponse(mark_safe(clscode), content_type="text/javascript")
 
-    def get_field_choices( self, formname, request, pk, field ):
+    def get_field_choices(self, formname, request, pk, field):
         """ Create a bound instance of the form and return choices from the given field. """
-        formcls  = self.forms[formname]
+        formcls = self.forms[formname]
         if pk != -1:
-            instance = formcls.Meta.model.objects.get( pk=pk )
+            instance = formcls.Meta.model.objects.get(pk=pk)
         else:
             instance = None
-        forminst = formcls( instance=instance )
+        forminst = formcls(instance=instance)
         return {
             'success': True,
-            'data': [ {'k': c[0], 'v': c[1]} for c in forminst.fields[field].choices ]
-            }
+            'data': [{'k': c[0], 'v': c[1]} for c in forminst.fields[field].choices]
+        }
 
-    def get_form_data( self, formname, request, pk ):
+    def get_form_data(self, formname, request, pk):
         """ Called to get the current values when a form is to be displayed. """
-        formcls  = self.forms[formname]
+        formcls = self.forms[formname]
         if pk != -1:
-            instance = formcls.Meta.model.objects.get( pk=pk )
+            instance = formcls.Meta.model.objects.get(pk=pk)
         else:
             instance = None
-        forminst = formcls( instance=instance )
+        forminst = formcls(instance=instance)
 
-        if hasattr( forminst, "EXT_authorize" ) and \
-           forminst.EXT_authorize( request, "get" ) is False:
-            return { 'success': False, 'errors': {'__all__': 'access denied'} }
+        if hasattr(forminst, "EXT_authorize") and \
+                        forminst.EXT_authorize(request, "get") is False:
+            return {'success': False, 'errors': {'__all__': 'access denied'}}
 
         data = {}
         for fld in forminst.fields:
             if instance:
-                data[fld] = getattr( instance, fld )
+                data[fld] = getattr(instance, fld)
             else:
                 data[fld] = forminst.base_fields[fld].initial
-        return { 'data': data, 'success': True }
+        return {'data': data, 'success': True}
 
-    def update_form_data( self, formname, request ):
+    def update_form_data(self, formname, request):
         """ Called to update the underlying model when a form has been submitted. """
         pk = int(request.POST['pk'])
-        formcls  = self.forms[formname]
+        formcls = self.forms[formname]
         if pk != -1:
-            instance = formcls.Meta.model.objects.get( pk=pk )
+            instance = formcls.Meta.model.objects.get(pk=pk)
         else:
             instance = None
         if request.POST['extUpload'] == "true":
-            forminst = formcls( request.POST, request.FILES, instance=instance )
+            forminst = formcls(request.POST, request.FILES, instance=instance)
         else:
-            forminst = formcls( request.POST, instance=instance )
+            forminst = formcls(request.POST, instance=instance)
 
-        if hasattr( forminst, "EXT_authorize" ) and \
-           forminst.EXT_authorize( request, "update" ) is False:
-            return { 'success': False, 'errors': {'__all__': 'access denied'} }
+        if hasattr(forminst, "EXT_authorize") and \
+                        forminst.EXT_authorize(request, "update") is False:
+            return {'success': False, 'errors': {'__all__': 'access denied'}}
 
         # save if either no usable validation method available or validation passes; and form.is_valid
-        if ( hasattr( forminst, "EXT_validate" ) and callable( forminst.EXT_validate )
-             and not forminst.EXT_validate( request ) ):
-            return { 'success': False, 'errors': {'__all__': 'pre-validation failed'} }
+        if hasattr(forminst, "EXT_validate") and callable(forminst.EXT_validate) \
+             and not forminst.EXT_validate(request):
+            return {'success': False, 'errors': {'__all__': 'pre-validation failed'}}
 
         if forminst.is_valid():
             forminst.save()
-            return { 'success': True }
+            return {'success': True}
         else:
             errdict = {}
             for errfld in forminst.errors:
-                errdict[errfld] = "\n".join( forminst.errors[errfld] )
-            return { 'success': False, 'errors': errdict }
+                errdict[errfld] = "\n".join(forminst.errors[errfld])
+            return {'success': False, 'errors': errdict}
 
     def get_urls(self):
         """ Return the URL patterns. """
         pat = Provider.get_urls(self)
         if self.forms:
-            pat.append( url( r'choicescombo.js$',      self.get_choices_combo_src ) )
-            pat.append( url( r'(?P<formname>\w+).js$', self.get_form ) )
+            pat.append(url(r'choicescombo.js$', self.get_choices_combo_src))
+            pat.append(url(r'(?P<formname>\w+).js$', self.get_form))
         return pat
 
     urls = property(get_urls)

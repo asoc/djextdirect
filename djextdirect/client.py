@@ -20,6 +20,7 @@ import httplib
 from threading import Lock
 from urlparse import urljoin, urlparse
 
+
 def lexjs(javascript):
     """ Parse the given javascript and return a dict of variables defined in there. """
     ST_NAME, ST_ASSIGN = range(2)
@@ -30,7 +31,7 @@ def lexjs(javascript):
 
     for char in javascript:
         if state == ST_NAME:
-            if   char == ' ':
+            if char == ' ':
                 continue
             elif char == '=':
                 state = ST_ASSIGN
@@ -43,23 +44,26 @@ def lexjs(javascript):
                 buf += char
 
         elif state == ST_ASSIGN:
-            if   char == ';':
+            if char == ';':
                 state = ST_NAME
                 foundvars[name] = json.loads(buf)
                 name = ""
-                buf  = ""
+                buf = ""
             else:
                 buf += char
 
     return foundvars
 
+
 class RequestError(Exception):
     """ Raised if the request returned a status code other than 200. """
     pass
 
+
 class ReturnedError(Exception):
     """ Raised if the "type" field in the response is "exception". """
     pass
+
 
 class Client(object):
     """ Ext.Direct client side implementation.
@@ -94,33 +98,33 @@ class Client(object):
         {'success': True}
     """
 
-    def __init__( self, apiurl, apiname="Ext.app.REMOTING_API", cookie=None ):
-        self.apiurl  = apiurl
+    def __init__(self, apiurl, apiname="Ext.app.REMOTING_API", cookie=None):
+        self.apiurl = apiurl
         self.apiname = apiname
-        self.cookie  = cookie
+        self.cookie = cookie
 
-        purl = urlparse( self.apiurl )
+        purl = urlparse(self.apiurl)
         conn = {
-            "http":  httplib.HTTPConnection,
+            "http": httplib.HTTPConnection,
             "https": httplib.HTTPSConnection
-            }[purl.scheme.lower()]( purl.netloc )
-        conn.putrequest( "GET", purl.path )
+        }[purl.scheme.lower()](purl.netloc)
+        conn.putrequest("GET", purl.path)
         conn.endheaders()
         resp = conn.getresponse()
-        foundvars = lexjs( resp.read() )
+        foundvars = lexjs(resp.read())
         conn.close()
 
         self.api = foundvars[apiname]
-        self.routerurl = urljoin( self.apiurl, self.api["url"] )
+        self.routerurl = urljoin(self.apiurl, self.api["url"])
 
         self._tid = 1
         self._tidlock = Lock()
 
         for action in self.api['actions']:
-            setattr( self, action, self.get_object(action) )
+            setattr(self, action, self.get_object(action))
 
     @property
-    def tid( self ):
+    def tid(self):
         """ Thread-safely get a new TID. """
         self._tidlock.acquire()
         self._tid += 1
@@ -128,69 +132,69 @@ class Client(object):
         self._tidlock.release()
         return newtid
 
-    def call( self, action, method, *args ):
+    def call(self, action, method, *args):
         """ Make a call to Ext.Direct. """
         reqtid = self.tid
-        data=json.dumps({
-            'tid':    reqtid,
+        data = json.dumps({
+            'tid': reqtid,
             'action': action,
             'method': method,
-            'data':   args,
-            'type':   'rpc'
-            })
+            'data': args,
+            'type': 'rpc'
+        })
 
-        purl = urlparse( self.routerurl )
+        purl = urlparse(self.routerurl)
         conn = {
-            "http":  httplib.HTTPConnection,
+            "http": httplib.HTTPConnection,
             "https": httplib.HTTPSConnection
-            }[purl.scheme.lower()]( purl.netloc )
-        conn.putrequest( "POST", purl.path )
-        conn.putheader( "Content-Type", "application/json" )
-        conn.putheader( "Content-Length", str(len(data)) )
+        }[purl.scheme.lower()](purl.netloc)
+        conn.putrequest("POST", purl.path)
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(len(data)))
         if self.cookie:
-            conn.putheader( "Cookie", self.cookie )
+            conn.putheader("Cookie", self.cookie)
         conn.endheaders()
-        conn.send( data )
+        conn.send(data)
         resp = conn.getresponse()
 
         if resp.status != 200:
-            raise RequestError( resp.status, resp.reason )
+            raise RequestError(resp.status, resp.reason)
 
-        respdata = json.loads( resp.read() )
+        respdata = json.loads(resp.read())
         if respdata['type'] == 'exception':
-            raise ReturnedError( respdata['message'], respdata['where'] )
+            raise ReturnedError(respdata['message'], respdata['where'])
         if respdata['tid'] != reqtid:
-            raise RequestError( 'TID mismatch' )
+            raise RequestError('TID mismatch')
 
-        cookie = resp.getheader( "set-cookie" )
+        cookie = resp.getheader("set-cookie")
         if cookie:
             self.cookie = cookie.split(';')[0]
 
         conn.close()
         return respdata['result']
 
-    def get_object( self, action ):
+    def get_object(self, action):
         """ Return a proxy object that has methods defined in the API. """
 
-        def makemethod( methspec ):
-            def func( self, *args ):
+        def makemethod(methspec):
+            def func(self, *args):
                 if len(args) != methspec['len']:
-                    raise TypeError( '%s() takes exactly %d arguments (%d given)' % (
+                    raise TypeError('%s() takes exactly %d arguments (%d given)' % (
                         methspec['name'], methspec['len'], len(args)
-                        ) )
-                return self._cli.call( action, methspec['name'], *args )
+                    ))
+                return self._cli.call(action, methspec['name'], *args)
 
             func.__name__ = methspec['name']
             return func
 
-        def init( self, cli ):
+        def init(self, cli):
             self._cli = cli
 
         attrs = {
-                '__init__': init
-            }
+            '__init__': init
+        }
 
         for methspec in self.api['actions'][action]:
-            attrs[methspec['name']] = makemethod( methspec )
+            attrs[methspec['name']] = makemethod(methspec)
 
-        return type( action+"Prx", (object,), attrs )( self )
+        return type(action + "Prx", (object,), attrs)(self)

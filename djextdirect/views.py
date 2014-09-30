@@ -15,21 +15,25 @@
  *  GNU General Public License for more details.
 """
 
-def login( request, username, passwd ):
+
+def login(request, username, passwd):
     from django.contrib.auth import authenticate, login as djlogin
+
     if request.user.is_authenticated():
-        return { 'success': True }
-    user = authenticate( username=username, password=passwd )
+        return {'success': True}
+    user = authenticate(username=username, password=passwd)
     if user:
         if user.is_active:
-            djlogin( request, user )
-            return { 'success': True }
+            djlogin(request, user)
+            return {'success': True}
         else:
-            return { 'success': False, 'error': 'account disabled' }
+            return {'success': False, 'error': 'account disabled'}
     else:
-        return { 'success': False, 'error': 'invalid credentials' }
+        return {'success': False, 'error': 'invalid credentials'}
 
-def logout( request ):
+
+def logout(request):
     from django.contrib.auth import logout as djlogout
-    djlogout( request )
-    return { 'success': True }
+
+    djlogout(request)
+    return {'success': True}
