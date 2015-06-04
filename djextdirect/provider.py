@@ -44,11 +44,14 @@ class Provider(object):
 
         Instantiation:
 
-        >>> EXT_JS_PROVIDER = Provider([name="Ext.app.REMOTING_API", autoadd=True])
+        >>> EXT_JS_PROVIDER = Provider(name="Ext.app.REMOTING_API", autoadd=True, timeout=30)
 
         If autoadd is True, the api.js will include a line like such::
 
             Ext.Direct.addProvider( Ext.app.REMOTING_API );
+
+        The value of timeout is in seconds and will be converted to milliseconds
+        when rendering api.js. Defaults to 0 (use ExtJS timeout)
 
         After instantiating the Provider, register functions to it like so:
 
@@ -77,15 +80,17 @@ class Provider(object):
             Ext.app.REMOTING_API = { # Ext.app.REMOTING_API is from Provider.name
                 "url": "/mumble/api/router",
                 "type": "remoting",
-                "actions": {"myclass": [{"name": "myview", "len": 4}]}
+                "actions": {"myclass": [{"name": "myview", "len": 4}]},
+                "timeout": 30000
                 }
 
         You can then use this code in ExtJS to define the Provider there.
     """
 
-    def __init__(self, name="Ext.app.REMOTING_API", autoadd=True):
+    def __init__(self, name="Ext.app.REMOTING_API", autoadd=True, timeout=0):
         self.name = name
         self.autoadd = autoadd
+        self.timeout = timeout or 0
         self.classes = {}
 
     def register_method(self, cls_or_name, flags=None):
@@ -131,7 +136,8 @@ class Provider(object):
         return HttpResponse(json.dumps({
             "url": reverse(self.request),
             "type": "remoting",
-            "actions": self.build_api_dict()
+            "actions": self.build_api_dict(),
+            'timeout': self.timeout * 1000,
         }, cls=DjangoJSONEncoder), content_type="application/json")
 
     def get_api(self, request):
@@ -142,7 +148,8 @@ class Provider(object):
         lines = ["%s = %s;" % ( self.name, json.dumps({
             "url": reverse(self.request),
             "type": "remoting",
-            "actions": self.build_api_dict()
+            "actions": self.build_api_dict(),
+            'timeout': self.timeout * 1000,
         }, cls=DjangoJSONEncoder))]
 
         if self.autoadd:
@@ -179,19 +186,21 @@ class Provider(object):
                 'tid': request.POST['extTID'],
             }
         except (MultiValueDictKeyError, KeyError) as err:
-            try:
-                rawjson = json.loads(request.body.decode(request.environ.get('PYTHONIOENCODING', 'UTF-8')))
-            except getattr(json, "JSONDecodeError", ValueError) as _err:
-                return HttpResponse(json.dumps({
-                    'type': 'exception',
-                    'message': 'malformed request',
-                    'where': str(_err),
-                    "tid": None,  # dunno
-                }, cls=DjangoJSONEncoder), content_type="application/json")
-            else:
-                return self.process_normal_request(request, rawjson)
+            pass
         else:
             return self.process_form_request(request, jsoninfo)
+
+        try:
+            rawjson = json.loads(request.body.decode(request.environ.get('PYTHONIOENCODING', 'UTF-8')))
+        except getattr(json, "JSONDecodeError", ValueError) as _err:
+            return HttpResponse(json.dumps({
+                'type': 'exception',
+                'message': 'malformed request',
+                'where': str(_err),
+                "tid": None,  # dunno
+            }, cls=DjangoJSONEncoder), content_type="application/json")
+        else:
+            return self.process_normal_request(request, rawjson)
 
     def process_normal_request(self, request, rawjson):
         """ Process standard requests (no form submission or file uploads). """

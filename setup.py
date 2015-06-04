@@ -1,17 +1,16 @@
-#!/usr/bin/env python
-
-from distutils.core import setup
+from setuptools import setup, find_packages
 
 from djextdirect import VERSION
 
-setup(name='djextdirect',
-    version=( '%d.%d' % VERSION ),
-    description='Ext.Direct serverside and clientside implementation for Django',
-    author="Michael Ziegler",
-    author_email='diese-addy@funzt-halt.net',
-    url='http://bitbucket.org/Svedrin/djextdirect/downloads',
-    download_url=('http://bitbucket.org/Svedrin/djextdirect/get/v%d.%d.tar.bz2' % VERSION),
-    packages=['djextdirect'],
+setup(
+    name='djextdirect',
+    version='%d.%d' % VERSION,
+    description='Ext.Direct server-side and client-side implementation for Django',
+    author='Alex Honeywell',
+    author_email='alex.honeywell@gmail.com',
+    url='https://github.com/asoc/djextdirect',
+    download_url='https://github.com/asoc/djextdirect/archive/master.zip',
+    packages=find_packages(),
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Web Environment',
@@ -21,6 +20,7 @@ setup(name='djextdirect',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Utilities'],
-    )
+        'Topic :: Utilities',
+    ],
+)
 

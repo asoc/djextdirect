@@ -8,10 +8,12 @@ Provider for Ext.Direct. This class handles building API information and routing
 Instantiation:
 
 ```python
-EXT_JS_PROVIDER = Provider([name="Ext.app.REMOTING_API", autoadd=True])
+EXT_JS_PROVIDER = Provider(name="Ext.app.REMOTING_API", autoadd=True, timeout=30)
 ```
 
 If `autoadd` is True, the api.js will include a line like such:
+
+The value of timeout is in seconds and will be converted to milliseconds when rendering api.js. Defaults to 0 (use ExtJS timeout)
 
 ```javascript
 Ext.Direct.addProvider(Ext.app.REMOTING_API);
@@ -45,7 +47,8 @@ If you then access the "api/api.js" URL, you will get a response such as::
 Ext.app.REMOTING_API = { // Ext.app.REMOTING_API is from Provider.name
     "url": "/api/router",
     "type": "remoting",
-    "actions": {"myclass": [{"name": "myview", "len": 4}]}
+    "actions": {"myclass": [{"name": "myview", "len": 4}]},
+    "timeout": 30000
 }
 ```
 You can then use this code in ExtJS to define the Provider there.
