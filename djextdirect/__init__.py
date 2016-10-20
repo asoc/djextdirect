@@ -15,7 +15,8 @@
  *  GNU General Public License for more details.
 """
 
-VERSION = (0, 11)
+VERSION = (0, 12)
 
 VERSIONSTR = "v%d.%d" % VERSION
 
+json_str = type('json_str', (str,), {})

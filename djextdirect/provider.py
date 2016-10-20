@@ -24,10 +24,12 @@ from sys import stderr
 
 from django.http import HttpResponse
 from django.conf import settings
-from django.conf.urls import patterns
+from django.conf.urls import url, include
 from django.core.urlresolvers import reverse
 from django.utils.datastructures import MultiValueDictKeyError
 from django.core.serializers.json import DjangoJSONEncoder
+
+from . import json_str
 
 
 def getname(cls_or_name):
@@ -68,9 +70,9 @@ class Provider(object):
         URL pattern, like so:
 
         >>> from views import EXT_JS_PROVIDER # import our provider instance
-        >>> urlpatterns = patterns(
+        >>> urlpatterns = (
         ...     # other patterns go here
-        ...     ( r'api/', include(EXT_DIRECT_PROVIDER.urls) ),
+        ...     url( r'api/', include(EXT_DIRECT_PROVIDER.urls) ),
         ... )
 
         This way, the Provider will define the URLs "api/api.js" and "api/router".
@@ -87,11 +89,27 @@ class Provider(object):
         You can then use this code in ExtJS to define the Provider there.
     """
 
-    def __init__(self, name="Ext.app.REMOTING_API", autoadd=True, timeout=0):
+    def __init__(self, name="Ext.app.REMOTING_API", autoadd=True, timeout=0,
+                 url_namespace=None, url_app=None, **config):
         self.name = name
         self.autoadd = autoadd
         self.timeout = timeout or 0
         self.classes = {}
+        self.config = config
+
+        self.url_app = url_app
+
+        self._request_viewname = ''
+
+        self.url_namespace = url_namespace
+        if url_namespace:
+            self._request_viewname += url_namespace + ':'
+
+        self._request_viewname += 'router'
+
+    @property
+    def urlconf(self):
+        return include(self.urls, self.url_namespace, self.url_app)
 
     def register_method(self, cls_or_name, flags=None):
         """ Return a function that takes a method as an argument and adds that
@@ -104,15 +122,30 @@ class Provider(object):
         """
         return functools.partial(self._register_method, cls_or_name, flags=flags)
 
-    def _register_method(self, cls_or_name, method, flags=None):
+    def _register_method(self, cls_or_name, method, flags=None, unwrap_for_argnames=True, with_name=None):
         """ Actually registers the given function as a method of cls_or_name. """
         clsname = getname(cls_or_name)
         if clsname not in self.classes:
             self.classes[clsname] = {}
         if flags is None:
             flags = {}
-        self.classes[clsname][method.__name__] = method
-        method.EXT_argnames = inspect.getargspec(method)[0][1:]
+        self.classes[clsname][with_name or method.__name__] = method
+
+        if unwrap_for_argnames:
+            unwrapped = method
+
+            while hasattr(unwrapped, '__wrapped__'):
+                unwrapped = unwrapped.__wrapped__
+
+            arg_list = inspect.getargspec(unwrapped)[0]
+        else:
+            arg_list = inspect.getargspec(method)[0]
+
+        try:
+            method.EXT_argnames = arg_list[2 if arg_list[0] == 'self' else 1:]
+        except IndexError:
+            method.EXT_argnames = []
+
         method.EXT_len = len(method.EXT_argnames)
         method.EXT_flags = flags
         return method
@@ -133,24 +166,34 @@ class Provider(object):
 
     def get_api_plain(self, request):
         """ Introspect the methods and get a JSON description of only the API. """
-        return HttpResponse(json.dumps({
-            "url": reverse(self.request),
-            "type": "remoting",
-            "actions": self.build_api_dict(),
-            'timeout': self.timeout * 1000,
-        }, cls=DjangoJSONEncoder), content_type="application/json")
+        config = self.config.copy()
+        config.update(
+            url=reverse(self._request_viewname),
+            type="remoting",
+            actions=self.build_api_dict(),
+            timeout=self.timeout * 1000
+        )
+
+        return HttpResponse(
+            json.dumps(config, cls=DjangoJSONEncoder),
+            content_type="application/json"
+        )
 
     def get_api(self, request):
         """ Introspect the methods and get a javascript description of the API
             that is meant to be embedded directly into the web site.
         """
         request.META["CSRF_COOKIE_USED"] = True
-        lines = ["%s = %s;" % ( self.name, json.dumps({
-            "url": reverse(self.request),
-            "type": "remoting",
-            "actions": self.build_api_dict(),
-            'timeout': self.timeout * 1000,
-        }, cls=DjangoJSONEncoder))]
+
+        config = self.config.copy()
+        config.update(
+            url=reverse(self._request_viewname),
+            type="remoting",
+            actions=self.build_api_dict(),
+            timeout=self.timeout * 1000
+        )
+
+        lines = ["%s = %s;" % (self.name, json.dumps(config, cls=DjangoJSONEncoder))]
 
         if self.autoadd:
             lines.append(
@@ -191,7 +234,7 @@ class Provider(object):
             return self.process_form_request(request, jsoninfo)
 
         try:
-            rawjson = json.loads(request.body.decode(request.environ.get('PYTHONIOENCODING', 'UTF-8')))
+            rawjson = json.loads(request.body.decode(request.encoding or 'UTF-8'))
         except getattr(json, "JSONDecodeError", ValueError) as _err:
             return HttpResponse(json.dumps({
                 'type': 'exception',
@@ -208,13 +251,16 @@ class Provider(object):
             rawjson = [rawjson]
 
         responses = []
+        replace_json_strs = []
 
         for reqinfo in rawjson:
-            cls, methname, data, rtype, tid = (reqinfo['action'],
-                                               reqinfo['method'],
-                                               reqinfo['data'],
-                                               reqinfo['type'],
-                                               reqinfo['tid'])
+            cls, methname, data, rtype, tid = (
+                reqinfo['action'],
+                reqinfo['method'],
+                reqinfo['data'],
+                reqinfo['type'],
+                reqinfo['tid'],
+            )
 
             if cls not in self.classes:
                 responses.append({
@@ -283,25 +329,60 @@ class Provider(object):
                 responses.append(errinfo)
 
             else:
-                responses.append({
-                    "type": rtype,
-                    "tid": tid,
-                    "action": cls,
-                    "method": methname,
-                    "result": result
-                })
+                if isinstance(result, HttpResponse) and result.status_code != 200:
+                    try:
+                        content = result.content.decode('UTF-8')
+                    except AttributeError:
+                        content = result.content
+
+                    if (
+                        not content and result.status_code == 302
+                        and result._headers.get(
+                            'location', ('', '!')
+                        )[1].startswith(settings.LOGIN_URL)
+                    ):
+                        content = 'Login Required / Session Expired'
+
+                    responses.append({
+                        'type': 'exception',
+                        'tid': tid,
+                        'message': content,
+                        'where': '',
+                    })
+                else:
+                    if isinstance(result, json_str):
+                        _ = '<<JSON!STR:{}>>'.format(len(responses))
+                        replace_json_strs.append((_, result))
+                        result = _
+
+                    responses.append({
+                        "type": rtype,
+                        "tid": tid,
+                        "action": cls,
+                        "method": methname,
+                        "result": result
+                    })
 
         if len(responses) == 1:
-            return HttpResponse(json.dumps(responses[0], cls=DjangoJSONEncoder), content_type="application/json")
-        else:
-            return HttpResponse(json.dumps(responses, cls=DjangoJSONEncoder), content_type="application/json")
+            responses = responses[0]
+
+        resp = json.dumps(responses, cls=DjangoJSONEncoder)
+
+        for rep, jstr in replace_json_strs:
+            resp = resp.replace('"{}"'.format(rep), jstr, 1)
+
+        return HttpResponse(resp, content_type="application/json")
 
     def process_form_request(self, request, reqinfo):
         """ Router for POST requests that submit form data and/or file uploads. """
-        cls, methname, rtype, tid = (reqinfo['action'],
-                                     reqinfo['method'],
-                                     reqinfo['type'],
-                                     reqinfo['tid'])
+        cls, methname, rtype, tid = (
+            reqinfo['action'],
+            reqinfo['method'],
+            reqinfo['type'],
+            reqinfo['tid'],
+        )
+
+        replace_json_str = None
 
         if cls not in self.classes:
             response = {
@@ -339,6 +420,10 @@ class Provider(object):
                 response = errinfo
 
             else:
+                if isinstance(result, json_str):
+                    replace_json_str = result
+                    result = '<<JSON!STR>>'
+
                 response = {
                     "type": rtype,
                     "tid": tid,
@@ -352,16 +437,19 @@ class Provider(object):
                 "<html><body><textarea>%s</textarea></body></html>" % json.dumps(response, cls=DjangoJSONEncoder),
                 content_type="application/json"
             )
-        else:
-            return HttpResponse(json.dumps(response, cls=DjangoJSONEncoder), content_type="application/json")
 
-    def get_urls(self):
+        resp = json.dumps(responses, cls=DjangoJSONEncoder)
+
+        if replace_json_str:
+            resp = resp.replace('"<<JSON!STR>>"', replace_json_str, 1)
+
+        return HttpResponse(resp, content_type="application/json")
+
+    @property
+    def urls(self):
         """ Return the URL patterns. """
-        pat = patterns('',
-                       (r'api.json$', self.get_api_plain),
-                       (r'api.js$', self.get_api),
-                       (r'router/?', self.request),
-        )
-        return pat
-
-    urls = property(get_urls)
+        return [
+            url(r'api.json$', self.get_api_plain, name='api.json'),
+            url(r'api.js$', self.get_api, name='api.js'),
+            url(r'router/?', self.request, name='router'),
+        ]
